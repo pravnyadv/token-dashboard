@@ -163,6 +163,17 @@ function showScanProgress(st) {
   el.textContent = `Indexing ${st.files_done}/${st.files_total} files…`;
 }
 
+function offerRefresh() {
+  if (document.getElementById('refresh-banner')) return;
+  const el = document.createElement('button');
+  el.id = 'refresh-banner';
+  el.textContent = 'New data. Click to refresh';
+  el.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:50;padding:8px 14px;cursor:pointer;' +
+    'background:#1b2330;color:#cdd6e0;border:1px solid #2c3a4d;border-radius:6px;font-size:13px';
+  el.onclick = () => { el.remove(); render(); };
+  document.body.appendChild(el);
+}
+
 async function boot() {
   buildTopbar();
   const planResp = await api('/api/plan');
@@ -184,7 +195,8 @@ async function boot() {
   });
 
   api('/api/scan/status').then(showScanProgress).catch(() => {});
-  api('/api/scan').catch(() => {}); // rescan on open; the SSE stream refreshes the page when it finds new data
+  let openScanPending = true;
+  api('/api/scan').catch(() => {}); // rescan on open; the SSE stream refreshes the page once it finishes
 
   // SSE diff stream
   try {
@@ -192,9 +204,10 @@ async function boot() {
     es.onmessage = ev => {
       try {
         const evt = JSON.parse(ev.data);
-        if (evt.type === 'scan') render();
         if (evt.type === 'scan_progress') showScanProgress(evt);
-        if (evt.type === 'scan_progress' && !evt.running) render();
+        // Re-render once for the scan started on open. Later scans (every 30 s) only offer a refresh.
+        if (evt.type === 'scan_progress' && !evt.running && openScanPending) { openScanPending = false; render(); }
+        else if (evt.type === 'scan') offerRefresh();
       } catch {}
     };
   } catch {}
