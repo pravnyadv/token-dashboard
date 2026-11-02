@@ -11,6 +11,14 @@ export default async function (root) {
   return renderSession(root, id);
 }
 
+// Codex sessions have no detail view (it relies on Claude's cache model); cost may be partial when a model has no price.
+const sessionCell = s => (s.provider || 'claude') === 'claude'
+  ? `<a href="#/sessions/${encodeURIComponent(s.session_id)}" class="mono">${fmt.htmlSafe(s.session_id.slice(0,8))}…</a>`
+  : `<span class="mono" title="${fmt.htmlSafe(s.provider)} session: the detail view is Claude-only">${fmt.htmlSafe(s.session_id.slice(0,8))}… <span class="muted">${fmt.htmlSafe(s.provider)}</span></span>`;
+const costCell = (s, v) => s.cost_unpriced
+  ? (v ? `${fmt.usd(v)} <span class="unpriced" title="a model in this session has no price in pricing.json">+ unpriced</span>` : '<span class="unpriced" title="no price in pricing.json for this model">unpriced</span>')
+  : fmt.usd(v);
+
 async function renderList(root) {
   const list = await api(withCompare('/api/sessions?limit=100'));
   const maxCost = Math.max(0, ...list.map(s => s.cost_usd || 0));
@@ -33,11 +41,11 @@ async function renderList(root) {
               <td class="num">${fmt.int(s.prompts)}</td>
               <td class="num">${fmt.compact(s.tokens_main)}</td>
               <td class="num">${s.tokens_sub ? fmt.compact(s.tokens_sub) : '—'}</td>
-              <td class="num">${fmt.usd(s.cost_main_usd)}</td>
+              <td class="num">${costCell(s, s.cost_main_usd)}</td>
               <td class="num">${s.cost_sub_usd ? fmt.usd(s.cost_sub_usd) : '—'}</td>
-              <td class="num">${fmt.usd(s.cost_usd)}${altLine(s)}</td>
+              <td class="num">${costCell(s, s.cost_usd)}${altLine(s)}</td>
               <td style="min-width:140px">${splitBar(s.cost_main_usd, s.cost_sub_usd, maxCost)}</td>
-              <td><a href="#/sessions/${encodeURIComponent(s.session_id)}" class="mono">${fmt.htmlSafe(s.session_id.slice(0,8))}…</a></td>
+              <td>${sessionCell(s)}</td>
             </tr>`).join('')}
         </tbody>
       </table>

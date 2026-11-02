@@ -24,13 +24,30 @@ export const fmt = {
   ts: t => (t || '').slice(0, 16).replace('T', ' '),
 };
 
+// Provider filter (claude | codex | all). Only these endpoints honour it; every other tab is Claude-only.
+export const PROVIDERS = [['claude', 'Claude'], ['codex', 'Codex'], ['all', 'All']];
+const PROVIDER_API = ['/api/overview', '/api/daily', '/api/by-model', '/api/sessions', '/api/projects', '/api/repos'];
+const PROVIDER_ROUTES = ['/overview', '/sessions', '/projects'];
+
+function readProvider() {
+  try { const v = localStorage.getItem('td.provider'); if (PROVIDERS.some(p => p[0] === v)) return v; }
+  catch (e) { /* storage unavailable */ }
+  return 'claude';
+}
+
+function withProvider(path) {
+  const [base, q] = path.split('?');
+  if (state.provider === 'claude' || !PROVIDER_API.includes(base)) return path;
+  return base + '?' + (q ? q + '&' : '') + 'provider=' + state.provider;
+}
+
 export async function api(path, opts) {
-  const r = await fetch(path, opts);
+  const r = await fetch(withProvider(path), opts);
   if (!r.ok) throw new Error(`${path} → ${r.status}`);
   return r.json();
 }
 
-export const state = { plan: 'api', pricing: null };
+export const state = { plan: 'api', pricing: null, provider: readProvider() };
 
 const ROUTES = {
   '/overview': () => import('/web/routes/overview.js'),
@@ -58,11 +75,22 @@ function buildTopbar() {
       ${Object.keys(ROUTES).map(p => `<a href="#${p}" data-route="${p}">${p.slice(1)}</a>`).join('')}
     </nav>
     <div class="spacer"></div>
+    <label class="provider-pick muted" title="Which CLI's usage the Overview, Sessions and Projects tabs show. All other tabs are Claude-only.">
+      provider
+      <select id="provider-select" aria-label="Provider">
+        ${PROVIDERS.map(([k, label]) => `<option value="${k}" ${k === state.provider ? 'selected' : ''}>${label}</option>`).join('')}
+      </select>
+    </label>
     <span id="compare-slot"></span>
     <span class="pill" id="plan-pill">api</span>
     <span class="pill muted" title="Cmd/Ctrl+B blurs sensitive text">⌘B blur</span>
   `;
   document.body.prepend(wrap);
+  wrap.querySelector('#provider-select').addEventListener('change', e => {
+    state.provider = e.target.value;
+    try { localStorage.setItem('td.provider', state.provider); } catch (err) { /* ignore */ }
+    render();
+  });
   import('/web/whatif.js').then(m => m.mountCompareSelector(wrap.querySelector('#compare-slot'))).catch(() => {});
 }
 
@@ -82,6 +110,12 @@ async function render() {
   $('#app').innerHTML = '';
   try {
     await mod.default($('#app'));
+    if (state.provider !== 'claude' && !PROVIDER_ROUTES.includes(key)) {
+      $('#app').insertAdjacentHTML('afterbegin',
+        `<div class="card provider-note" role="note">The provider filter is set to <b>${fmt.htmlSafe(state.provider)}</b>,
+         but this tab shows <b>Claude usage only</b>: it relies on Claude's prompt-cache model, which Codex does not share.
+         The filter applies to Overview, Sessions and Projects.</div>`);
+    }
   } catch (e) {
     $('#app').innerHTML = `<div class="card"><h2>Error</h2><pre>${fmt.htmlSafe(String(e.stack || e))}</pre></div>`;
   }

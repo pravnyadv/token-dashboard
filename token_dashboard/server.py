@@ -30,6 +30,8 @@ from .findings import findings
 from . import findings_store, findings_generate
 from .findings_facts import facts as findings_facts
 from .scanner import scan_dir
+from . import provider as prov
+from . import provider_pricing as pprice
 from .scan_state import get_status, run_scan
 from .skills import cached_catalog
 from .cost_insights import tool_costs, skill_costs, top_calls
@@ -123,7 +125,12 @@ def build_handler(db_path: str, projects_dir: str):
 
         def do_GET(self):
             try:
-                return self._do_get()
+                scope = prov.for_request(self.path)   # ?provider= is honoured on a few endpoints only
+            except ValueError as e:
+                return _send_error(self, 400, str(e))
+            try:
+                with prov.scope(scope):
+                    return self._do_get()
             except sqlite3.OperationalError as e:
                 return _db_busy(self, e)
             except (BrokenPipeError, ConnectionResetError):
@@ -150,6 +157,8 @@ def build_handler(db_path: str, projects_dir: str):
                 if targets:
                     totals["alt_costs"] = rep["alt_costs"]
                     totals["alt_unpriced_tokens"] = rep["alt_unpriced_tokens"]
+                if prov.current() != "claude":
+                    pprice.mark_overview(totals, model_breakdown(db_path, since, until), pricing)
                 return _send_json(self, totals)
             if path == "/api/prompts":
                 limit = _clamp_limit(qs.get("limit", ["50"])[0], 50)
@@ -178,10 +187,13 @@ def build_handler(db_path: str, projects_dir: str):
             if path == "/api/tools":
                 return _send_json(self, tool_token_breakdown(db_path, since, until))
             if path == "/api/sessions":
-                return _send_json(self, add_session_costs(db_path, pricing, recent_sessions(
+                rows = add_session_costs(db_path, pricing, recent_sessions(
                     db_path, limit=_clamp_limit(qs.get("limit", ["20"])[0], 20),
                     since=since, until=until,
-                ), targets))
+                ), targets)
+                if prov.current() != "claude":
+                    pprice.mark_sessions(db_path, pricing, rows)
+                return _send_json(self, rows)
             if path == "/api/session-timeline":
                 sid = qs.get("id", [""])[0]
                 if not sid:
@@ -239,6 +251,8 @@ def build_handler(db_path: str, projects_dir: str):
                     if targets:
                         r["alt_costs"] = x["alt_costs"] if x else dict.fromkeys(targets)
                         r["alt_unpriced_tokens"] = x["alt_unpriced_tokens"] if x else dict.fromkeys(targets, 0)
+                if prov.current() != "claude":
+                    pprice.mark_models(rows, pricing)
                 return _send_json(self, rows)
             if path.startswith("/api/sessions/"):
                 sid = path.rsplit("/", 1)[1]
@@ -354,7 +368,7 @@ def _scan_loop(db_path: str, projects_dir: str, interval: float = 30.0):
     while True:
         try:
             started, n = run_scan(projects_dir, db_path, scan_dir, _emit)
-            if started and n["messages"] > 0:
+            if started and (n["messages"] > 0 or n.get("codex", {}).get("messages", 0) > 0):
                 EVENTS.put({"type": "scan", "n": n, "ts": time.time()})
         except Exception as e:
             EVENTS.put({"type": "error", "message": str(e)})

@@ -16,7 +16,7 @@ class QueryTests(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.db = os.path.join(self.tmp, "q.db")
         init_db(self.db)
-        with connect(self.db) as c:
+        with connect(self.db, provider="all") as c:
             c.executescript("""
             INSERT INTO messages (uuid, parent_uuid, session_id, project_slug, type, timestamp, model,
               input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens,
@@ -100,7 +100,7 @@ class SkillBreakdownTests(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.db = os.path.join(self.tmp, "s.db")
         init_db(self.db)
-        with connect(self.db) as c:
+        with connect(self.db, provider="all") as c:
             c.executescript("""
             INSERT INTO messages (uuid, session_id, project_slug, type, timestamp)
             VALUES
@@ -187,7 +187,7 @@ class ProjectNameInQueriesTests(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.db = os.path.join(self.tmp, "n.db")
         init_db(self.db)
-        with connect(self.db) as c:
+        with connect(self.db, provider="all") as c:
             c.executescript("""
             INSERT INTO messages (uuid, session_id, project_slug, cwd, type, timestamp,
               input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens)

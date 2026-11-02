@@ -36,6 +36,9 @@ def cmd_scan(args):
     init_db(db)
     n = scan_dir(_projects(args), db)
     print(f"Token Dashboard: scanned {n['files']} files, {n['messages']} messages, {n['tools']} tool calls")
+    cx = n.get("codex") or {}
+    if cx.get("files"):
+        print(f"Token Dashboard: scanned {cx['files']} Codex rollouts, {cx['messages']} messages, {cx['tools']} tool calls")
 
 
 def cmd_today(args):

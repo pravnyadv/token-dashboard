@@ -65,9 +65,14 @@ python3 cli.py dashboard --projects-dir /path/to/projects --db /path/to/cache.db
 | `PORT` | `8080` | Port the local web server listens on |
 | `HOST` | `127.0.0.1` | Bind address. Keep the default. Setting `0.0.0.0` exposes your entire prompt history to anyone on your local network — don't do this on any network you don't fully control (no coffee-shop Wi-Fi, no coworking spaces). |
 | `CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Where to scan for session JSONL files |
+| `CODEX_SESSIONS_DIR` | `~/.codex/sessions` | Where to scan for OpenAI Codex CLI rollout files (optional) |
 | `TOKEN_DASHBOARD_DB` | `~/.claude/token-dashboard.db` | SQLite cache location |
 
 Pricing lives in [`pricing.json`](pricing.json). To change a price or add a model without editing the repo, put the entries in `~/.claude/token-dashboard.pricing.json` (or the file named by `TOKEN_DASHBOARD_PRICING`); they replace same-named entries. See [`docs/PRICING.md`](docs/PRICING.md) for the file format and how to keep prices current.
+
+## Codex CLI usage (optional)
+
+If you also use OpenAI's Codex CLI, the dashboard reads its rollouts (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, override with `CODEX_SESSIONS_DIR`) in the same scan and shows them next to Claude. A missing directory is fine. The **provider** selector in the top bar (Claude, Codex, All; Claude is the default) filters the Overview, Sessions and Projects tabs. Every other tab is Claude-only and its numbers do not change when Codex data exists. A Codex model that is not in `pricing.json` is shown as *unpriced*, never guessed. Codex files are only read, never modified, and nothing is sent anywhere.
 
 ## CLI reference
 
