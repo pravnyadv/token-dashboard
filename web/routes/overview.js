@@ -79,6 +79,7 @@ export default async function (root) {
         <div class="label">Est. cost</div>
         <div class="value" title="${fmt.usd(totals.cost_usd)}">${fmt.usd(totals.cost_usd)}</div>
         ${altLine(totals)}
+        ${totals.unpriced_tokens ? `<div class="sub unpriced" title="Models with no price in pricing.json are not costed">${fmt.compact(totals.unpriced_tokens)} tokens unpriced</div>` : ''}
         ${planSubtitle()}
       </div>
     </div>
@@ -113,13 +114,14 @@ export default async function (root) {
       <div class="card"><h3>Tokens by project</h3><div id="ch-projects" style="height:320px"></div></div>
       <div class="card">
         <h3>Token usage by model</h3>
-        <p class="muted" style="margin:-4px 0 4px;font-size:12px">Share of billable tokens per Claude model.</p>
+        <p class="muted" style="margin:-4px 0 4px;font-size:12px">Share of billable tokens per model.
+          ${byModel.some(m => m.unpriced) ? `<span class="unpriced">Unpriced (not in pricing.json): ${byModel.filter(m => m.unpriced).map(m => fmt.htmlSafe(m.model)).join(', ')}</span>` : ''}</p>
         <div id="ch-model" style="height:300px"></div>
       </div>
     </div>
 
     <div class="row cols-2" style="margin-top:16px">
-      <div class="card"><h3>Top tools (by call count)</h3><div id="ch-tools" style="height:320px"></div></div>
+      <div class="card"><h3>Top tools (by call count)${state.provider !== 'claude' ? ' <span class="muted" style="font-weight:400;font-size:12px">— Claude only</span>' : ''}</h3><div id="ch-tools" style="height:320px"></div></div>
       <div class="card">
         <h3 style="display:flex;align-items:center"><span>Recent sessions</span><span class="spacer"></span><a href="#/sessions" style="font-weight:400;font-size:12px">all →</a></h3>
         <table>
@@ -128,7 +130,9 @@ export default async function (root) {
             ${sessions.map(s => `
               <tr>
                 <td class="mono">${fmt.ts(s.started)}</td>
-                <td><a href="#/sessions/${encodeURIComponent(s.session_id)}">${fmt.htmlSafe(s.project_name || s.project_slug)}</a></td>
+                <td>${(s.provider || 'claude') === 'claude'
+                  ? `<a href="#/sessions/${encodeURIComponent(s.session_id)}">${fmt.htmlSafe(s.project_name || s.project_slug)}</a>`
+                  : fmt.htmlSafe(s.project_name || s.project_slug)}</td>
                 <td class="num">${fmt.compact(s.tokens)}</td>
               </tr>`).join('') || '<tr><td colspan="3" class="muted">no sessions in this range</td></tr>'}
           </tbody>

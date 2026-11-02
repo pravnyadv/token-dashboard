@@ -65,9 +65,18 @@ python3 cli.py dashboard --projects-dir /path/to/projects --db /path/to/cache.db
 | `PORT` | `8080` | Port the local web server listens on |
 | `HOST` | `127.0.0.1` | Bind address. Keep the default. Setting `0.0.0.0` exposes your entire prompt history to anyone on your local network — don't do this on any network you don't fully control (no coffee-shop Wi-Fi, no coworking spaces). |
 | `CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Where to scan for session JSONL files |
+| `CODEX_SESSIONS_DIR` | `~/.codex/sessions` | Where to scan for OpenAI Codex CLI rollout files (optional) |
 | `TOKEN_DASHBOARD_DB` | `~/.claude/token-dashboard.db` | SQLite cache location |
 
 Pricing lives in [`pricing.json`](pricing.json). To change a price or add a model without editing the repo, put the entries in `~/.claude/token-dashboard.pricing.json` (or the file named by `TOKEN_DASHBOARD_PRICING`); they replace same-named entries. See [`docs/PRICING.md`](docs/PRICING.md) for the file format and how to keep prices current.
+
+## Codex CLI usage (optional)
+
+If you also use OpenAI's Codex CLI, the dashboard reads its rollouts (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, override with `CODEX_SESSIONS_DIR`) in the same scan and shows them next to Claude. A missing directory is fine. The **provider** selector in the top bar (Claude, Codex, All; Claude is the default) filters the Overview, Sessions and Projects tabs. Every other tab is Claude-only and its numbers do not change when Codex data exists. A Codex model that is not in `pricing.json` is shown as *unpriced*, never guessed. Codex files are only read, never modified, and nothing is sent anywhere.
+
+## Fix ledger
+
+For when you change one thing to cut token cost (a rule in `CLAUDE.md`, a model choice, a habit): open the **Ledger** tab (or `python3 cli.py ledger apply --kind rule --metric cost_per_day_usd "shorter CLAUDE.md"`) and record it with one metric. The baseline is that metric's daily average over the 7 days before today. Once 7 full days have passed, the next 7 days are averaged, and the entry gets a verdict: `improved`, `no_change` (moved less than 10%) or `worse`. A scan checks automatically; `ledger check` does it on demand and `ledger list` prints the table. Metrics (Claude usage only): `cost_per_day_usd`, `opus_cost_share`, `cache_wasted_usd_per_day`, `cache_hit_ratio` (higher is better; the rest lower), `compactions_per_day`, `cost_share_over_200k_context`. A verdict is indicative, not proof: see [limitations](docs/KNOWN_LIMITATIONS.md#fix-ledger-verdicts-are-indicative-not-proof).
 
 ## CLI reference
 
@@ -77,6 +86,7 @@ python3 cli.py today         # today's totals (terminal)
 python3 cli.py stats         # all-time totals (terminal)
 python3 cli.py tips          # active suggestions (terminal)
 python3 cli.py dashboard     # scan + serve the UI at http://localhost:8080
+python3 cli.py ledger list|apply|check   # fix ledger (see above)
 
 # dashboard flags
 python3 cli.py dashboard --no-open   # don't auto-open the browser

@@ -11,6 +11,9 @@ from typing import Optional, Union
 from .schema_compactions import ensure_compactions
 from .schema_subagents import ensure_subagents
 from .schema_speed import ensure_speed
+from .schema_provider import ensure_provider
+from .schema_ledger import ensure_ledger
+from . import provider as _provider
 
 DB_TIMEOUT_S = 10.0  # wait this long on a locked db before OperationalError
 
@@ -105,6 +108,8 @@ def init_db(path: Union[str, Path]) -> None:
         ensure_compactions(c)   # compactions table + one-time replay marker
         ensure_subagents(c)     # subagent_spawns table + one-time replay marker
         ensure_speed(c)         # messages.speed column + one-time replay marker
+        ensure_provider(c)      # messages/tool_calls.provider column (additive, no replay)
+        ensure_ledger(c)        # fix ledger (user data: never cleared by a rescan)
         c.commit()
     finally:
         c.close()
@@ -159,13 +164,16 @@ def _migrate_add_tool_use_id(conn) -> None:
 
 
 @contextmanager
-def connect(path: Union[str, Path]):
+def connect(path: Union[str, Path], provider: Optional[str] = None):
+    """Open the database. Reads of messages/tool_calls see ``provider``'s rows only
+    (default: the current scope, ``claude``; ``"all"`` = the raw tables, for scanners)."""
     conn = sqlite3.connect(path, timeout=DB_TIMEOUT_S)
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout = {int(DB_TIMEOUT_S * 1000)}")
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA foreign_keys = ON")
+    _provider.install_views(conn, provider or _provider.current())
     try:
         yield conn
     finally:

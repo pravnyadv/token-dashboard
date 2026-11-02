@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 from .db import connect
+from .codex_scan import scan_codex
 from .compaction_parse import store_compaction
+from .ledger import auto_check
 from .subagent_parse import store_spawns
 
 
@@ -298,7 +300,20 @@ def _put_file_row(conn, path, mtime, offset) -> None:
     )
 
 
-def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path], progress=None) -> dict:
+def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path], progress=None,
+             codex_dir: Union[str, Path, None] = None) -> dict:
+    """The scan entry point (CLI and live rescan): Claude transcripts, then Codex rollouts.
+
+    The returned counts are Claude's; Codex's are under ``"codex"``. A missing Codex
+    directory (``codex_dir`` / ``CODEX_SESSIONS_DIR`` / ``~/.codex/sessions``) is normal.
+    """
+    totals = _scan_claude_dir(projects_root, db_path, progress)
+    totals["codex"] = scan_codex(codex_dir, db_path)
+    auto_check(db_path)     # judge fixes whose 7 days are over (idempotent)
+    return totals
+
+
+def _scan_claude_dir(projects_root: Union[str, Path], db_path: Union[str, Path], progress=None) -> dict:
     """Scan every JSONL under ``projects_root``, newest files first.
 
     Commits once per file (and every CHECKPOINT_BYTES inside huge files), with
@@ -318,7 +333,7 @@ def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path], progres
             continue
         entries.append((st.st_mtime, st.st_size, p))
     entries.sort(key=lambda e: e[0], reverse=True)
-    with connect(db_path) as conn:
+    with connect(db_path, provider="all") as conn:
         known = {r["path"]: (r["mtime"], r["bytes_read"])
                  for r in conn.execute("SELECT path, mtime, bytes_read FROM files")}
         todo = []

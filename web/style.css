@@ -290,3 +290,10 @@ tr[data-skill-drill]:hover, tr[data-skill-drill]:focus-within { background: var(
 .finding.info .fig { color: var(--accent, #4A9EFF); }
 .callout { border-left: 3px solid var(--border); padding: 6px 10px; margin: 8px 0; font-size: 13px; }
 .badge.auto { color: var(--warn, #e0a030); border-color: rgba(224,160,48,0.3); background: rgba(224,160,48,0.08); }
+
+/* provider filter */
+.topbar .provider-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; margin-right: 10px; }
+.topbar .provider-pick select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border, #2c3a4d); border-radius: 6px; padding: 3px 6px; }
+.provider-note { margin-bottom: 14px; font-size: 13px; border-left: 3px solid #E8A23B; }
+.unpriced { color: #E8A23B; font-size: 12px; }
+input[type=text] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2, #2c3a4d); border-radius: 6px; padding: 6px 8px; font: inherit; }

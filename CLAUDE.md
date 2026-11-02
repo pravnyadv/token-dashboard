@@ -24,6 +24,7 @@ Claude Code writes one JSONL file per session under `~/.claude/projects/<project
 - **Stdlib only.** No `pip install`. If a new feature needs a third-party library, argue for it first — we're willing to pay ergonomics cost to keep install friction at zero.
 - **SQLite parameter binding always.** Any f-string in a SQL statement must interpolate only internal, caller-controlled values (column names, placeholder lists). User-reachable values go through `?`.
 - **Small files with clear responsibilities.** If a file grows past ~400 lines or accretes three distinct concerns, split it.
+- **Provider scope.** `messages` / `tool_calls` carry a `provider` column (`claude` default, `codex`). `db.connect` shadows both tables with TEMP VIEWS of the current provider (default `claude`, see `provider.py`), so existing analyses are Claude-only by construction. Only the endpoints in `provider.PROVIDER_PATHS` accept `?provider=`. Scanners connect with `provider="all"`; anything that writes to `messages` must too (`tests/test_provider_guard.py` checks). The scope is a ContextVar that threads do not inherit. The views filter on `+provider` on purpose: an index on `provider` made them 3-4x slower. Tests are kept off `~/.codex` by `tests/hermetic.py`.
 - **Streaming-snapshot dedup.** When adding scanner logic that joins the `messages` table, remember `(session_id, message_id)` is the dedup key, not `uuid`. See `scanner._evict_prior_snapshots` and the migration note in `db._migrate_add_message_id`.
 
 ## Customizing

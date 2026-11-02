@@ -36,6 +36,9 @@ def cmd_scan(args):
     init_db(db)
     n = scan_dir(_projects(args), db)
     print(f"Token Dashboard: scanned {n['files']} files, {n['messages']} messages, {n['tools']} tool calls")
+    cx = n.get("codex") or {}
+    if cx.get("files"):
+        print(f"Token Dashboard: scanned {cx['files']} Codex rollouts, {cx['messages']} messages, {cx['tools']} tool calls")
 
 
 def cmd_today(args):
@@ -101,6 +104,32 @@ def cmd_findings_clear(args):
     print("Token Dashboard: cleared the saved findings")
 
 
+def cmd_ledger(args):
+    from token_dashboard import ledger
+    from token_dashboard.rates import load_with_override
+    db = _db_path(args)
+    init_db(db)
+    pricing = load_with_override(Path(__file__).resolve().parent / "pricing.json")
+    if args.action == "list":
+        print(ledger.format_table(ledger.entries(db)))
+    elif args.action == "apply":
+        if not args.kind or not args.metric:
+            raise SystemExit("Token Dashboard: ledger apply needs --kind and --metric")
+        try:
+            e = ledger.apply(db, pricing, args.kind, args.description or "", args.metric)
+        except ValueError as ex:
+            raise SystemExit(f"Token Dashboard: {ex}")
+        base = "no data in the last 7 days" if e["baseline"] is None else f"{e['baseline']:.4g} over {e['days_before']} days"
+        print(f"Token Dashboard: recorded fix #{e['id']} ({e['metric']} baseline: {base}); "
+              f"judge it on {ledger.due_day(e['applied_at'])} or later with `ledger check`")
+    else:
+        done = ledger.check(db, pricing)
+        for e in done:
+            print(f"#{e['id']} {e['metric']}: {e['verdict']} (baseline {e['baseline']} -> after {e['after']}, "
+                  f"{e['days_after']} days of data)")
+        print(f"Token Dashboard: judged {len(done)} fix(es). {ledger.VERDICT_NOTE}")
+
+
 def cmd_dashboard(args):
     db = _db_path(args)
     init_db(db)
@@ -145,6 +174,12 @@ def build_parser() -> argparse.ArgumentParser:
     fsv.add_argument("file")
     fsv.set_defaults(func=cmd_findings_save)
     sub.add_parser("findings-clear", parents=[sub_flags]).set_defaults(func=cmd_findings_clear)
+    lg = sub.add_parser("ledger", parents=[sub_flags], help="record a cost-cutting change, later judge whether the metric moved")
+    lg.add_argument("action", choices=["list", "apply", "check"])
+    lg.add_argument("description", nargs="?", help="what you changed (apply)")
+    lg.add_argument("--kind", choices=["rule", "model", "habit", "other"])
+    lg.add_argument("--metric", help="e.g. cost_per_day_usd (see the Ledger tab)")
+    lg.set_defaults(func=cmd_ledger)
     d = sub.add_parser("dashboard", parents=[sub_flags])
     d.add_argument("--no-scan", action="store_true")
     d.add_argument("--no-open", action="store_true")
