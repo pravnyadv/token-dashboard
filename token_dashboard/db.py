@@ -12,6 +12,7 @@ from .schema_compactions import ensure_compactions
 from .schema_subagents import ensure_subagents
 from .schema_speed import ensure_speed
 from .schema_provider import ensure_provider
+from .schema_ledger import ensure_ledger
 from . import provider as _provider
 
 DB_TIMEOUT_S = 10.0  # wait this long on a locked db before OperationalError
@@ -108,6 +109,7 @@ def init_db(path: Union[str, Path]) -> None:
         ensure_subagents(c)     # subagent_spawns table + one-time replay marker
         ensure_speed(c)         # messages.speed column + one-time replay marker
         ensure_provider(c)      # messages/tool_calls.provider column (additive, no replay)
+        ensure_ledger(c)        # fix ledger (user data: never cleared by a rescan)
         c.commit()
     finally:
         c.close()

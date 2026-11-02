@@ -308,6 +308,8 @@ def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path], progres
     from .codex_scan import scan_codex
     totals = _scan_claude_dir(projects_root, db_path, progress)
     totals["codex"] = scan_codex(codex_dir, db_path)
+    from .ledger import auto_check
+    auto_check(db_path)     # judge fixes whose 7 days are over (idempotent)
     return totals
 
 

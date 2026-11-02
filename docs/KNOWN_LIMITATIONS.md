@@ -117,3 +117,10 @@ The Compare tab, `/api/whatif` and every `alt_costs` field re-price the recorded
 - **Keys.** Rows are keyed `<session_id>:<ordinal>`. A resumed session that replays earlier records overwrites them instead of duplicating; two different files that reuse one session id and ordinal with different content would overwrite each other.
 - **Tool calls** are attached to the latest prompt or turn before them; calls seen before any prompt or turn are dropped. Only result sizes are stored, not their text.
 - **Pricing.** Costs use `pricing.json` like Claude's. A model with no entry is *unpriced* and excluded from cost totals (the Overview shows how many tokens that is). Prompt text is clipped to 2,000 characters.
+
+## Fix ledger verdicts are indicative, not proof
+
+- **One user, one week.** A verdict compares two 7-day averages from your own usage. Your workload changes from week to week (different tasks, a release, a holiday), and you may have changed other things too, so a move can have nothing to do with the fix. There is no control group and no significance test; the 10 percent threshold is a rule of thumb that filters ordinary noise, not a statistical bound.
+- **Thin windows.** Days with no activity are left out of an average rather than counted as zero. `days of data` (before / after) shows how many days each average rests on; fewer than 7 means a thin sample. No data in a window gives `no_change`, not a guess.
+- **Timing.** Days are UTC, like `/api/daily`. The day an entry is applied belongs to neither window. An entry is judged on the 8th day after it was applied, once the 7th day after it is over, so a partial day never counts; it is judged once and not revised when later data arrives.
+- **Metrics.** They are the dashboard's own estimates (costs from `pricing.json`, cache waste and compactions from the Cache and Compactions tabs' heuristics) and cover Claude usage only. Codex is excluded because its cache semantics differ. Ratios (`opus_cost_share`, `cache_hit_ratio`, `cost_share_over_200k_context`) are averaged per day, not weighted by spend, so a quiet day counts as much as a busy one.

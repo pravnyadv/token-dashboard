@@ -62,6 +62,7 @@ const ROUTES = {
   '/costs':    () => import('/web/routes/costs.js'),
   '/cache':    () => import('/web/routes/cache.js'),
   '/compactions': () => import('/web/routes/compactions.js'),
+  '/ledger':   () => import('/web/routes/ledger.js'),
   '/tips':     () => import('/web/routes/tips.js'),
   '/settings': () => import('/web/routes/settings.js'),
 };

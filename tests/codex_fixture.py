@@ -50,7 +50,7 @@ class Server:
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json", **(headers or {})})
         with urllib.request.urlopen(req) as r:
-            return json.loads(r.read())
+            return r.status, json.loads(r.read())
 
     def close(self):
         self.httpd.shutdown()
