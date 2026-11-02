@@ -75,13 +75,13 @@ function buildTopbar() {
     <nav>
       ${Object.keys(ROUTES).map(p => `<a href="#${p}" data-route="${p}">${p.slice(1)}</a>`).join('')}
     </nav>
-    <div class="topbar-right">
     <label class="provider-pick muted" title="Which CLI's usage the Overview, Sessions and Projects tabs show. All other tabs are Claude-only.">
       provider
       <select id="provider-select" aria-label="Provider">
         ${PROVIDERS.map(([k, label]) => `<option value="${k}" ${k === state.provider ? 'selected' : ''}>${label}</option>`).join('')}
       </select>
     </label>
+    <div class="topbar-pills">
     <span id="compare-slot"></span>
     <span class="pill" id="plan-pill">api</span>
     <span class="pill muted" title="Cmd/Ctrl+B blurs sensitive text">⌘B blur</span>
