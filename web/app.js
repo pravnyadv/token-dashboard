@@ -184,6 +184,7 @@ async function boot() {
   });
 
   api('/api/scan/status').then(showScanProgress).catch(() => {});
+  api('/api/scan').catch(() => {}); // rescan on open; the SSE stream refreshes the page when it finds new data
 
   // SSE diff stream
   try {

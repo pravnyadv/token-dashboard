@@ -41,6 +41,15 @@ The command:
 
 Leave it running; it re-scans every 30 seconds and pushes updates live. Stop with `Ctrl+C`.
 
+### Always on at `http://tally.test` (macOS, pm2 + Herd)
+
+```bash
+pm2 start ecosystem.config.cjs && pm2 save      # runs on 127.0.0.1:5330
+herd proxy tally http://localhost:5330          # the .test name, once
+```
+
+The server rescans every 30 s, and the page triggers a scan when it opens, so it shows current data after a sleep.
+
 ## Where the data comes from
 
 Claude Code writes one JSONL file per session here:
