@@ -56,7 +56,7 @@ header.topbar {
 .topbar nav a:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
 .topbar nav a.active { color: var(--text); background: var(--panel-2); }
 
-.topbar .spacer { margin-left: auto; }
+.topbar-right { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
 .topbar .pill {
   padding: 4px 10px; border-radius: 6px;
   background: var(--panel-2); border: 1px solid var(--border);
