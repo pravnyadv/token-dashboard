@@ -31,8 +31,7 @@ from . import findings_store, findings_generate
 from .findings_facts import facts as findings_facts
 from .scanner import scan_dir
 from . import provider as prov
-from . import ledger
-from . import ledger_metrics
+from . import ledger_api
 from . import provider_pricing as pprice
 from .scan_state import get_status, run_scan
 from .skills import cached_catalog
@@ -295,9 +294,7 @@ def build_handler(db_path: str, projects_dir: str):
                 tool = qs.get("tool", [None])[0] or None
                 return _send_json(self, top_calls(db_path, pricing, since, until, tool, limit))
             if path == "/api/ledger":
-                return _send_json(self, {"entries": ledger.entries(db_path), "metrics": ledger_metrics.metric_list(),
-                                         "kinds": list(ledger.KINDS), "window_days": ledger.WINDOW_DAYS,
-                                         "threshold": ledger.CHANGE_THRESHOLD, "note": ledger.VERDICT_NOTE})
+                return _send_json(self, ledger_api.get_payload(db_path))
             if path == "/api/plan":
                 return _send_json(self, {"plan": get_plan(db_path), "pricing": pricing})
             if path == "/api/scan/status":
@@ -362,15 +359,8 @@ def build_handler(db_path: str, projects_dir: str):
                     return _send_error(self, 409, "a generation is already running")
                 return _send_json(self, {"ok": True}, 202)
             if url.path in ("/api/ledger", "/api/ledger/check"):
-                if self.headers.get("X-Token-Dashboard") != "1":
-                    return _send_error(self, 403, "missing X-Token-Dashboard header")
-                if url.path == "/api/ledger/check":
-                    return _send_json(self, {"checked": ledger.check(db_path, pricing)})
-                try:
-                    return _send_json(self, ledger.apply(db_path, pricing, body.get("kind"),
-                                                         body.get("description"), body.get("metric")), 201)
-                except ValueError as e:
-                    return _send_error(self, 400, str(e))
+                status, obj = ledger_api.post(db_path, pricing, url.path, body, self.headers)
+                return _send_json(self, obj, status)
             if url.path == "/api/tips/dismiss":
                 dismiss_tip(db_path, body.get("key", ""))
                 return _send_json(self, {"ok": True})

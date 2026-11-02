@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 import urllib.error
+from unittest import mock
 
 from token_dashboard.codex_scan import scan_codex
 from token_dashboard.db import init_db
@@ -64,6 +65,34 @@ class ScanTests(CodexBase):
         scan_codex(d, self.db)
         self.assertEqual(rows(self.db, "SELECT uuid FROM messages")[0]["uuid"], "S:1")
 
+    def test_only_the_first_session_meta_names_the_session(self):
+        d = os.path.join(self.tmp, "fork"); os.makedirs(d)
+        usage = {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 1}
+        recs = [
+            {"timestamp": "2026-10-22T00:00:00Z", "ordinal": 0, "type": "session_meta", "payload": {"id": "A", "cwd": "/a"}},
+            {"timestamp": "2026-10-22T00:00:01Z", "ordinal": 1, "type": "event_msg",
+             "payload": {"type": "token_count", "info": {"last_token_usage": usage}}},
+            {"timestamp": "2026-10-22T00:00:02Z", "ordinal": 2, "type": "session_meta", "payload": {"id": "B", "cwd": "/b"}},
+            {"timestamp": "2026-10-22T00:00:03Z", "ordinal": 3, "type": "event_msg",
+             "payload": {"type": "token_count", "info": {"last_token_usage": usage}}},
+        ]
+        path = os.path.join(d, "rollout-fork.jsonl")
+        with open(path, "w") as f:
+            f.write("\n".join(json.dumps(r) for r in recs[:3]) + "\n")
+        scan_codex(d, self.db)
+        with open(path, "a") as f:                                   # appended later: state (incl. meta_seen) is reloaded
+            f.write(json.dumps(recs[3]) + "\n")
+        scan_codex(d, self.db)
+        r = rows(self.db, "SELECT uuid, session_id, cwd FROM messages ORDER BY uuid")
+        self.assertEqual([(x["uuid"], x["session_id"], x["cwd"]) for x in r], [("A:1", "A", "/a"), ("A:3", "A", "/a")])
+
+    def test_token_counts_as_numeric_strings_are_read_and_junk_is_zero(self):
+        from token_dashboard.codex_parse import usage_buckets
+        b = usage_buckets({"input_tokens": "9000", "cached_input_tokens": " 2000 ", "output_tokens": "120"})
+        self.assertEqual((b["input_tokens"], b["cache_read_tokens"], b["output_tokens"]), (7000, 2000, 120))
+        b = usage_buckets({"input_tokens": "lots", "cached_input_tokens": -5, "output_tokens": True})
+        self.assertEqual((b["input_tokens"], b["cache_read_tokens"], b["output_tokens"]), (0, 0, 0))
+
     def test_tool_calls(self):
         scan_codex(self.root, self.db)
         t = {(x["tool_use_id"], x["tool_name"]): x for x in rows(self.db, TOOLS)}
@@ -94,7 +123,6 @@ class ScanTests(CodexBase):
     def test_full_replay_is_idempotent(self):
         scan_codex(self.root, self.db)
         before = (rows(self.db, DUMP), rows(self.db, TOOLS))
-        rows(self.db, "SELECT 1")  # (connection helper smoke)
         from token_dashboard.db import connect
         with connect(self.db, provider="all") as c:   # what the one-time backfills do
             c.execute("UPDATE files SET bytes_read = 0, mtime = 0"); c.commit()
@@ -134,8 +162,9 @@ class ScanTests(CodexBase):
 
     def test_missing_directory_is_not_an_error(self):
         self.assertEqual(scan_codex(os.path.join(self.tmp, "nope"), self.db), {"messages": 0, "tools": 0, "files": 0})
-        os.environ["CODEX_SESSIONS_DIR"] = os.path.join(self.tmp, "also-nope")
-        self.addCleanup(os.environ.pop, "CODEX_SESSIONS_DIR", None)
+        env = mock.patch.dict(os.environ, {"CODEX_SESSIONS_DIR": os.path.join(self.tmp, "also-nope")})
+        env.start()
+        self.addCleanup(env.stop)       # restores the hermetic value, not "unset"
         r = scan_dir(os.path.join(self.tmp, "no-claude"), self.db)
         self.assertEqual(r["codex"]["files"], 0)
         self.assertEqual(r["files"], 0)
@@ -163,12 +192,20 @@ class ProviderApiTests(CodexBase):
         self.srv = Server(self.db)
         self.addCleanup(self.srv.close)
 
+    VOLATILE = ("since", "until")    # derived from the wall clock to the second (e.g. /api/findings)
+
+    @classmethod
+    def stable(cls, v):
+        if isinstance(v, dict):
+            return {k: cls.stable(x) for k, x in v.items() if k not in cls.VOLATILE}
+        return [cls.stable(x) for x in v] if isinstance(v, list) else v
+
     def snapshot(self):
         out = {}
         for p in CLAUDE_ONLY:
             for suffix in ("", ("&" if "?" in p else "?") + "provider=codex", ("&" if "?" in p else "?") + "provider=all"):
                 try:
-                    out[p + suffix] = self.srv.get(p + suffix)
+                    out[p + suffix] = self.stable(self.srv.get(p + suffix))
                 except urllib.error.HTTPError as e:
                     out[p + suffix] = e.code
         return out

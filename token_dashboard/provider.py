@@ -7,6 +7,11 @@ findings, agents, what-if, costs...) assumes Claude's cache model and queries
 rows, so such code is Claude-only by construction. The default scope is
 ``claude``; the server widens it for the few endpoints that take ``?provider=``,
 and the scanners ask for ``all`` (raw tables).
+
+The scope is a ContextVar: a thread starts with the default (``claude``) and does NOT inherit
+its starter's scope, so work handed to a thread that must see Codex rows has to enter
+``scope()`` itself. Anything that writes ``messages`` / ``tool_calls`` must connect with
+``provider="all"`` (a view cannot be written); tests/test_provider_guard.py enforces that.
 """
 from __future__ import annotations
 
@@ -60,6 +65,6 @@ def install_views(conn, provider: str) -> None:
         raise ValueError(provider)
     # `provider` is whitelisted above; `rowid` is exposed because some queries order by it.
     conn.execute(f"CREATE TEMP VIEW IF NOT EXISTS messages AS "
-                 f"SELECT rowid AS rowid, * FROM main.messages WHERE provider = '{provider}'")
+                 f"SELECT rowid AS rowid, * FROM main.messages WHERE +provider = '{provider}'")
     conn.execute(f"CREATE TEMP VIEW IF NOT EXISTS tool_calls AS "
-                 f"SELECT * FROM main.tool_calls WHERE provider = '{provider}'")
+                 f"SELECT * FROM main.tool_calls WHERE +provider = '{provider}'")

@@ -40,6 +40,7 @@ class State:
     model: Optional[str] = None
     last_uuid: Optional[str] = None   # message the next tool call is attached to
     next_line: int = 0                # 0-based number of the next line to read
+    meta_seen: bool = False           # only the file's first session_meta names the session
 
     def dumps(self) -> str:
         return json.dumps(asdict(self))
@@ -55,6 +56,12 @@ class State:
 
 
 def _n(v) -> int:
+    """A token count: non-negative int/float, or a numeric string; anything else is 0."""
+    if isinstance(v, str):
+        try:
+            v = float(v.strip())
+        except ValueError:
+            return 0
     return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0
 
 
@@ -96,10 +103,14 @@ def _target(payload: dict) -> Optional[str]:
     return raw[:TARGET_CLIP]
 
 
-def _base(st: State, rec: dict, key: str, ts: str) -> dict:
+def _slug(st: State) -> str:
+    return _encode_slug(st.cwd) if st.cwd else "unknown"
+
+
+def _base(st: State, key: str, ts: str) -> dict:
     return {
         "uuid": key, "parent_uuid": None, "session_id": st.session_id,
-        "project_slug": _encode_slug(st.cwd) if st.cwd else "unknown",
+        "project_slug": _slug(st),
         "cwd": st.cwd, "git_branch": st.branch, "cc_version": st.version, "entrypoint": st.originator,
         "is_sidechain": 0, "agent_id": None, "timestamp": ts, "model": None, "stop_reason": None,
         "prompt_id": None, "message_id": key,
@@ -121,6 +132,9 @@ def parse_record(rec: dict, st: State) -> Tuple[List[dict], List[dict]]:
     ordinal = rec.get("ordinal") if isinstance(rec.get("ordinal"), int) and not isinstance(rec.get("ordinal"), bool) else line_no
     key, pt = f"{st.session_id}:{ordinal}", p.get("type")
     if typ == "session_meta":
+        if st.meta_seen:
+            return [], []       # a resumed/forked rollout may embed its parent's meta: keep this session's id
+        st.meta_seen = True
         st.session_id = p.get("id") or st.session_id
         st.cwd = p.get("cwd") or st.cwd
         git = p.get("git") if isinstance(p.get("git"), dict) else {}
@@ -137,7 +151,7 @@ def parse_record(rec: dict, st: State) -> Tuple[List[dict], List[dict]]:
         u = (p.get("info") or {}).get("last_token_usage") if isinstance(p.get("info"), dict) else None
         if not isinstance(u, dict):
             return [], []
-        m = _base(st, rec, key, ts)
+        m = _base(st, key, ts)
         m.update(type="assistant", model=st.model, **usage_buckets(u))
         st.last_uuid = key
         return [m], []
@@ -145,7 +159,7 @@ def parse_record(rec: dict, st: State) -> Tuple[List[dict], List[dict]]:
         return [], []
     if pt == "message" and p.get("role") == "user":
         text = blocks_text(p.get("content"))
-        m = _base(st, rec, key, ts)
+        m = _base(st, key, ts)
         m.update(type="user", prompt_text=text[:PROMPT_CLIP], prompt_chars=len(text))
         st.last_uuid = key
         return [m], []
@@ -153,7 +167,7 @@ def parse_record(rec: dict, st: State) -> Tuple[List[dict], List[dict]]:
         if not st.last_uuid:
             return [], []   # nothing to attach to yet (no prompt or turn seen)
         call_id = p.get("call_id") if isinstance(p.get("call_id"), str) else key
-        t = {"message_uuid": st.last_uuid, "session_id": st.session_id, "project_slug": _base(st, rec, key, ts)["project_slug"],
+        t = {"message_uuid": st.last_uuid, "session_id": st.session_id, "project_slug": _slug(st),
              "timestamp": ts, "tool_use_id": call_id, "provider": "codex", "is_error": 0}
         if pt.endswith("_output"):
             out = p.get("output")

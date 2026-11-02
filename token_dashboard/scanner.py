@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 from .db import connect
+from .codex_scan import scan_codex
 from .compaction_parse import store_compaction
+from .ledger import auto_check
 from .subagent_parse import store_spawns
 
 
@@ -305,10 +307,8 @@ def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path], progres
     The returned counts are Claude's; Codex's are under ``"codex"``. A missing Codex
     directory (``codex_dir`` / ``CODEX_SESSIONS_DIR`` / ``~/.codex/sessions``) is normal.
     """
-    from .codex_scan import scan_codex
     totals = _scan_claude_dir(projects_root, db_path, progress)
     totals["codex"] = scan_codex(codex_dir, db_path)
-    from .ledger import auto_check
     auto_check(db_path)     # judge fixes whose 7 days are over (idempotent)
     return totals
 

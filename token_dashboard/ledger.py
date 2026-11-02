@@ -54,15 +54,15 @@ def verdict_for(metric: str, baseline: Optional[float], after: Optional[float]) 
 
 def apply(db_path, pricing, kind: str, description: str, metric: str, now: Optional[datetime] = None) -> dict:
     """Record a change. Raises ValueError for an unknown kind or metric, or a bad description."""
-    if kind not in KINDS:
+    if not isinstance(kind, str) or kind not in KINDS:
         raise ValueError("kind must be one of " + ", ".join(KINDS))
-    if metric not in metrics.METRICS:
+    if not isinstance(metric, str) or metric not in metrics.METRICS:   # JSON may send a list/object
         raise ValueError(f"unknown metric {metric!r}")
     description = (description or "").strip() if isinstance(description, str) else ""
     if not description or len(description) > MAX_DESCRIPTION:
         raise ValueError(f"description is required (at most {MAX_DESCRIPTION} characters)")
     now = _now(now)
-    before = metrics.window(db_path, pricing, now.date() - timedelta(days=1), WINDOW_DAYS)
+    before = metrics.window(db_path, pricing, now.date() - timedelta(days=1), WINDOW_DAYS, metric)
     return store.ledger_add(db_path, now.isoformat(), kind, description, metric,
                             metrics.daily_mean(before, metric), metrics.days_with_data(before, metric))
 
@@ -79,7 +79,7 @@ def check(db_path, pricing, today: Optional[date] = None, now: Optional[datetime
         if e["checked_at"] is not None or today < due_day(e["applied_at"]):
             continue
         applied = _day(e["applied_at"])
-        days = metrics.window(db_path, pricing, applied + timedelta(days=WINDOW_DAYS), WINDOW_DAYS)
+        days = metrics.window(db_path, pricing, applied + timedelta(days=WINDOW_DAYS), WINDOW_DAYS, e["metric"])
         after = metrics.daily_mean(days, e["metric"])
         res = store.ledger_set_result(db_path, e["id"], now.isoformat(), after,
                                       verdict_for(e["metric"], e["baseline"], after),

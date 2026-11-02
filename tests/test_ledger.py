@@ -77,7 +77,9 @@ class BaselineTests(LedgerBase):
 
     def test_unknown_metric_kind_and_description_are_rejected_and_not_stored(self):
         for args in (("rule", "x", "nope"), ("sparkles", "x", "cost_per_day_usd"), ("rule", "  ", "cost_per_day_usd"),
-                     ("rule", "x" * 501, "cost_per_day_usd"), ("rule", None, "cost_per_day_usd")):
+                     ("rule", "x" * 501, "cost_per_day_usd"), ("rule", None, "cost_per_day_usd"),
+                     ("rule", "x", ["cost_per_day_usd"]), ("rule", "x", {"a": 1}), ("rule", "x", None),   # JSON types
+                     (["rule"], "x", "cost_per_day_usd"), ({"k": 1}, "x", "cost_per_day_usd"), ("rule", 5, "cost_per_day_usd")):
             with self.assertRaises(ValueError):
                 ledger.apply(self.db, PRICING, *args, now=APPLIED)
         self.assertEqual(ledger.entries(self.db), [])
@@ -131,21 +133,30 @@ class CheckTests(LedgerBase):
         self.assertAlmostEqual(r["after"], 0.2, places=6)
         self.assertIsNotNone(r["checked_at"])
 
-    def test_worse_and_no_change(self):
+    def test_worse(self):
         self.week(-7, [400_000] * 7)
-        a = self.apply()
-        b = self.apply(now=APPLIED + timedelta(minutes=1))
+        e = self.apply()
         self.week(1, [600_000] * 7)                                    # +50% -> worse
-        for x in ledger.check(self.db, PRICING, today=date.fromisoformat(day(8))):
-            self.assertEqual(x["verdict"], "worse")
-        c = self.apply(now=APPLIED + timedelta(days=10))               # another entry; judged later
-        self.assertEqual(len(ledger.entries(self.db)), 3)
-        # a flat week: same level before and after
-        db2 = os.path.join(self.tmp, "flat.db"); init_db(db2)
+        (r,) = ledger.check(self.db, PRICING, today=date.fromisoformat(day(8)))
+        self.assertEqual((r["id"], r["verdict"]), (e["id"], "worse"))
+        self.assertAlmostEqual(r["after"], 0.6, places=6)
+
+    def test_no_change_on_a_flat_week(self):
         for off in list(range(-7, 0)) + list(range(1, 8)):
-            put(db2, day(off), inp=400_000)
-        ledger.apply(db2, PRICING, "habit", "flat", "cost_per_day_usd", now=APPLIED)
-        self.assertEqual(ledger.check(db2, PRICING, today=date.fromisoformat(day(8)))[0]["verdict"], "no_change")
+            put(self.db, day(off), inp=400_000)
+        self.apply()
+        (r,) = ledger.check(self.db, PRICING, today=date.fromisoformat(day(8)))
+        self.assertEqual((r["verdict"], round(r["baseline"], 6), round(r["after"], 6)), ("no_change", 0.4, 0.4))
+
+    def test_each_entry_is_judged_on_its_own_dates(self):
+        self.week(-7, [400_000] * 7)
+        old = self.apply()
+        self.week(1, [600_000] * 7)
+        young = self.apply(now=APPLIED + timedelta(days=5))            # applied 3 days before the check: pending
+        done = ledger.check(self.db, PRICING, today=date.fromisoformat(day(8)))
+        self.assertEqual([x["id"] for x in done], [old["id"]])
+        self.assertEqual({e["id"]: e["status"] for e in ledger.entries(self.db)},
+                         {old["id"]: "checked", young["id"]: "pending"})
 
     def test_higher_is_better_metric_end_to_end(self):
         for off in range(-7, 0):
@@ -251,6 +262,22 @@ class MetricTests(LedgerBase):
         self.assertEqual({r["day"]: r["count"] for r in compactions_report(self.db, PRICING)["by_day"]}, {day(0): 2})
         self.assertEqual(lm.daily_mean(w, "compactions_per_day"), 1.0)
 
+    def test_asking_for_one_metric_skips_the_other_sources(self):
+        put(self.db, day(0), inp=100_000)
+        from unittest import mock
+        boom = mock.Mock(side_effect=AssertionError("source not needed"))
+        with mock.patch.object(lm, "cache_report", boom), mock.patch.object(lm, "compactions_report", boom):
+            v = lm.window(self.db, PRICING, date.fromisoformat(day(0)), 1, "cost_per_day_usd")
+        self.assertEqual(list(v[day(0)]), ["cost_per_day_usd"])
+        with mock.patch.object(lm, "cost_split", boom), mock.patch.object(lm, "compactions_report", boom):
+            v = lm.window(self.db, PRICING, date.fromisoformat(day(0)), 1, "cache_hit_ratio")
+        self.assertEqual(list(v[day(0)]), ["cache_hit_ratio"])
+        with self.assertRaises(ValueError):
+            lm.window(self.db, PRICING, date.fromisoformat(day(0)), 1, "nope")
+        full = lm.window(self.db, PRICING, date.fromisoformat(day(0)), 1)             # no metric: all of them
+        self.assertEqual(set(full[day(0)]), {"cost_per_day_usd", "compactions_per_day", "opus_cost_share",
+                                              "cost_share_over_200k_context", "cache_wasted_usd_per_day", "cache_hit_ratio"})
+
     def test_days_without_activity_have_no_data_and_ratios_need_cost(self):
         put(self.db, day(0), model="not-a-priced-model", inp=1000)     # activity, but nothing priced
         v = self.win(end=1, n=2)
@@ -332,6 +359,14 @@ class ApiTests(LedgerBase):
         self.assertAlmostEqual(e["baseline"], 0.2, places=6)           # a client-supplied baseline is ignored
         self.assertEqual(e["days_before"], 3)
         self.assertEqual(len(self.srv.get("/api/ledger")["entries"]), 1)
+
+    def test_post_with_non_string_json_values_is_a_400_not_a_dropped_connection(self):
+        body = {"kind": "rule", "description": "x", "metric": "cost_per_day_usd"}
+        for bad in ({"metric": []}, {"metric": {"a": 1}}, {"metric": 7}, {"kind": ["rule"]}, {"description": ["x"]}):
+            code, res = self.post("/api/ledger", {**body, **bad}, self.H)
+            self.assertEqual(code, 400, bad)
+            self.assertIn("error", res)
+        self.assertEqual(self.srv.get("/api/ledger")["entries"], [])
 
     def test_post_validation_and_origin_header(self):
         body = {"kind": "rule", "description": "x", "metric": "cost_per_day_usd"}
